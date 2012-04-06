@@ -1,0 +1,6 @@
+DESCRIPTION
+
+  IPFWTABLED is a daemon for FreeBSD OS which is intended to provide remote interface
+  to IPFW's (FreeBSD firewall) tables. This might be useful for environments which use
+  ipfw tables intensively (to prevent fork-bombing with 'ipfw' command) or want to control
+  firewall remotely.
