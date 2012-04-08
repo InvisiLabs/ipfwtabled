@@ -8,7 +8,7 @@ DESCRIPTION
 USAGE
   
   ipfwtabled [-h <host>[:<port>][ -h <host>[:<port>] ...]]
-             [-d] [-v <verbosity>] [-t|-u]
+             [-d] [-t|-u]
    -b <host>:<port> - address to bind to. May be specified multiple times. If no
                       option specified, daemon bounds to all local addresses.
    -d               - fork to background and become daemon.
@@ -16,7 +16,7 @@ USAGE
    -u               - use connection-less sockets (SOCK_DGRAM)
    -h               - print this message
 
-  See example Perl 'client.pl' for reference on client implementation.
+  See Perl example script 'client.pl' for reference on client implementation.
 
 INSTALLATION
 

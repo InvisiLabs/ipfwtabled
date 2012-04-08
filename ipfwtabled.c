@@ -70,7 +70,7 @@ const size_t messagelen = sizeof(struct message);
 void usage(char * progname)
 {
   char * usage_info = "Usage: ipfwtabled [-h <host>[:<port>][ -h <host>[:<port>] ...]] \
-[-d] [-v <verbosity>] [-t|-u]\n\
+[-d] [-t|-u]\n\
    -b <host>:<port> - bind address\n\
    -d               - daemonize\n\
    -t               - use TCP\n\
@@ -332,7 +332,7 @@ int main (int argc, char * argv[])
               }
             if (sockidx == FD_SETSIZE)
             {
-              syslog(LOG_ERR, "Too simultaneous connections");
+              syslog(LOG_ERR, "Too many simultaneous connections");
               continue;
             }
             if (sockidx >= socks_cnt)
