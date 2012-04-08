@@ -1,6 +1,81 @@
 DESCRIPTION
 
-  IPFWTABLED is a daemon for FreeBSD OS which is intended to provide remote interface
-  to IPFW's (FreeBSD firewall) tables. This might be useful for environments which use
-  ipfw tables intensively (to prevent fork-bombing with 'ipfw' command) or want to control
-  firewall remotely.
+  IPFWTABLED is a daemon for FreeBSD OS which is intended to provide remote
+  interface to IPFW's (FreeBSD firewall) tables. This might be useful for
+  environments which use ipfw tables intensively (to prevent fork-bombing with
+  'ipfw' command) or want to control firewall remotely.
+
+USAGE
+  
+  ipfwtabled [-h <host>[:<port>][ -h <host>[:<port>] ...]]
+             [-d] [-v <verbosity>] [-t|-u]
+   -b <host>:<port> - address to bind to. May be specified multiple times. If no
+                      option specified, daemon bounds to all local addresses.
+   -d               - fork to background and become daemon.
+   -t               - use connection-based sockets (SOCK_STREAM)
+   -u               - use connection-less sockets (SOCK_DGRAM)
+   -h               - print this message
+
+  See example Perl 'client.pl' for reference on client implementation.
+
+INSTALLATION
+
+  Source comes with simple Makefile thus plain
+
+    $ make
+
+  should be enough.
+
+COMPATIBILITY
+
+  Tested on FreeBSD 9 but should work on earlier versions as well.
+
+SOURCE
+  
+  Source is available on githib: https://github.com/InvisiLabs/ipfwtabled
+
+TODO
+
+  * Add rcNG script for automatic service startup
+  * Add hash field for authentication/integrity check purposes
+
+BUGS
+
+  Please, report bugs and suggestions to <v.khondar at invisilabs.com> or via
+  github issue tracker at https://github.com/InvisiLabs/ipfwtabled/issues
+
+LIMITATIONS
+
+  Currently, only ADD/DELETE/FLUSH operations for IPFW tables are supported.
+  Single address in CIDR notation is processed per single request.
+
+  IPFWTABLED must be run as root as interation with IPFW is performed via
+  setsockopt() interface which requires root privileges.
+
+COPYRIGHT & LICENSE
+
+  Copyright (c) 2012,
+  Vadym S. Khondar <v.khondar at invisilabs.com>, InvisiLabs.
+  All rights reserved.
+  
+  Redistribution and use in source and binary forms, with or without
+  modification, are permitted provided that the following conditions are met:
+      * Redistributions of source code must retain the above copyright
+        notice, this list of conditions and the following disclaimer.
+      * Redistributions in binary form must reproduce the above copyright
+        notice, this list of conditions and the following disclaimer in the
+        documentation and/or other materials provided with the distribution.
+      * Neither the name of the <organization> nor the
+        names of its contributors may be used to endorse or promote products
+        derived from this software without specific prior written permission.
+  
+  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+  AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+  IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+  ARE DISCLAIMED. IN NO EVENT SHALL <COPYRIGHT HOLDER> BE LIABLE FOR ANY
+  DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+  (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+  LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+  ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+  (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+  THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
