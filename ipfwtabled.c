@@ -471,7 +471,7 @@ int main (int argc, char * argv[])
               ipfw_tbl_add(msg.table, msg.addr, msg.mask);
               if (config.tbl_exp_periods &&
                   config.tbl_exp_periods[msg.table] > 0)
-              { /* add entry to queue only in exp int was specified */
+              { /* add entry to queue only if exp int was specified */
                 autoexpq_entry * entry =
                   (autoexpq_entry *)calloc(1, sizeof(autoexpq_entry));
 

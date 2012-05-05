@@ -43,7 +43,6 @@ SOURCE
 
 TODO
 
-  * Add rcNG script for automatic service startup
   * Add hash field for authentication/integrity check purposes
 
 BUGS
