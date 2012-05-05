@@ -80,6 +80,8 @@ void ipfw_tbl_add(int table, in_addr_t addr, u_int8_t mask)
     {
       if (do_cmd(IP_FW_TABLE_DEL, &ent, entlen) < 0)
         syslog(LOG_ERR, "Add to table failed: %s", strerror(errno));
+      if (do_cmd(IP_FW_TABLE_ADD, &ent, entlen) < 0)
+        syslog(LOG_ERR, "Add to table failed: %s", strerror(errno));
     } else syslog(LOG_ERR, "Add to table failed: %s", strerror(errno));
   }
 }
