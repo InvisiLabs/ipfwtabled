@@ -5,15 +5,22 @@ DESCRIPTION
   environments which use ipfw tables intensively (to prevent fork-bombing with
   'ipfw' command) or want to control firewall remotely.
 
+  IPFWTABLED supports automatic expiring of entries in IPFW tables based on
+  configured values for expiration interval. This may be specified one for all
+  tables or different for each of them.
+
 USAGE
   
-  ipfwtabled [-h <host>[:<port>][ -h <host>[:<port>] ...]]
-             [-d] [-t|-u]
-   -b <host>:<port> - address to bind to. May be specified multiple times. If no
-                      option specified, daemon bounds to all local addresses.
-   -d               - fork to background and become daemon.
-   -t               - use connection-based sockets (SOCK_STREAM)
-   -u               - use connection-less sockets (SOCK_DGRAM)
+  ipfwtabled [-b <host>[:<port>][ -b <host>[:<port>] ...]]
+  [-d] [-t|-u] [-e [<tableidx>]:<timeinsec>[-e <tableidx>:<timeinsec> ...]]
+   -b <host>:<port> - bind address
+   -d               - daemonize
+   -t               - use TCP
+   -u               - use UDP
+   -e [<idx>]:<sec> - specify expiry period for entries of table
+                      idx is index of ipfw table
+                      sec is amount of seconds before entry to be purged
+                      if idx is not specified value is set for all tables
    -h               - print this message
 
   See Perl example script 'client.pl' for reference on client implementation.
@@ -46,7 +53,8 @@ BUGS
 
 LIMITATIONS
 
-  Currently, only ADD/DELETE/FLUSH operations for IPFW tables are supported.
+  Only ADD/DELETE/FLUSH operations for IPFW tables are supported.
+  TTL for table entries can be specified only table-wide on ipfwtabled startup.
   Single address in CIDR notation is processed per single request.
 
   IPFWTABLED must be run as root as interation with IPFW is performed via
