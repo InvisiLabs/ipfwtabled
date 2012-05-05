@@ -87,7 +87,7 @@ void ipfw_tbl_add(int table, in_addr_t addr, u_int8_t mask)
 void ipfw_tbl_del(int table, in_addr_t addr, u_int8_t mask)
 {
   struct in_addr ia = { addr };
-  syslog(LOG_DEBUG, "Deleting %s/%i to table (%i)", inet_ntoa(ia), mask, table);
+  syslog(LOG_DEBUG, "Deleting %s/%i from table (%i)", inet_ntoa(ia), mask, table);
   ipfw_table_entry ent;
   int entlen = sizeof(ent);
   bzero(&ent, entlen);

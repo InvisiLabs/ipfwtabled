@@ -42,6 +42,7 @@
 
 #include <netinet/in.h>
 #include <sys/un.h>
+#include <arpa/inet.h>
 
 #include <sys/select.h>
 
@@ -51,11 +52,21 @@
 
 #include <pwd.h>
 
+#include <time.h>
+
+#include <sys/queue.h>
+
 #include "ipfwtabled.h"
 #include "ipfw.h"
 
 #define DEFAULT_SOCK_TYPE SOCK_DGRAM
 #define DEFAULT_BACKLOG 10
+
+#define MIN_CLEANUP_INTERVAL 5
+#define MAX_CLEANUP_DELAY 60
+
+#define TAILQ_PRINT(head) \
+{ autoexpq_entry * ent; STAILQ_FOREACH(ent, &head, qconnector) { syslog(LOG_DEBUG, "QITEM %x\n", ent); } }
 
 struct configuration
 {
@@ -63,19 +74,25 @@ struct configuration
   int bind_addrs_cnt;
   int sock_type;
   int daemonize;
-} config = { NULL, 0, -1, 0 };
+  time_t * tbl_exp_periods;
+} config = { NULL, 0, -1, 0, NULL };
 
 const size_t messagelen = sizeof(struct message);
 
 void usage(char * progname)
 {
-  char * usage_info = "Usage: ipfwtabled [-h <host>[:<port>][ -h <host>[:<port>] ...]] \
-[-d] [-t|-u]\n\
-   -b <host>:<port> - bind address\n\
-   -d               - daemonize\n\
-   -t               - use TCP\n\
-   -u               - use UDP\n\
-   -h               - print this message\n";
+  char * usage_info = 
+    "Usage: ipfwtabled [-b <host>[:<port>][ -b <host>[:<port>] ...]]\n"
+"  [-d] [-t|-u] [-e [<tableidx>]:<timeinsec>[-e <tableidx>:<timeinsec> ...]]\n"
+"   -b <host>:<port> - bind address\n"
+"   -d               - daemonize\n"
+"   -t               - use TCP\n"
+"   -u               - use UDP\n"
+"   -e [<idx>]:<sec> - specify expiry period for entries of table\n"
+"                      idx is index of ipfw table\n"
+"                      sec is amount of seconds before entry to be purged\n"
+"                      if idx is not specified value is set for all tables\n"
+"   -h               - print this message\n";
   fprintf(stderr, usage_info, progname);
 }
 
@@ -88,6 +105,14 @@ int getsock(int domain, int type, int proto,
   {
     syslog(LOG_ERR, "Failed to create socket: %s", strerror(errno));
     return -1;
+  }
+  if (setsockopt(fd, SOL_SOCKET, SO_RCVLOWAT, &messagelen, sizeof(size_t)))
+    syslog(LOG_WARNING, "Failed to set socket low watermark: %s", strerror(errno));
+  if (domain == AF_INET)
+  {
+    int ruseaddr = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &ruseaddr, sizeof(ruseaddr)))
+      syslog(LOG_WARNING, "Failed to set address reuse on socket: %s", strerror(errno));
   }
   if (bind(fd, addr, addrlen))
   {
@@ -103,10 +128,6 @@ int getsock(int domain, int type, int proto,
       syslog(LOG_ERR, "Failed to listen for '%s': %s", caddr, strerror(errno));
       return -3;
     }
-  } else
-  {
-    if (setsockopt(fd, SOL_SOCKET, SO_RCVLOWAT, &messagelen, sizeof(size_t)))
-      syslog(LOG_WARNING, "Failed to set socket low watermark: %s", strerror(errno));
   }
   return fd;
 }
@@ -142,28 +163,67 @@ int main (int argc, char * argv[])
 
   /* processing command-line args */
   int opt;
-  while ((opt = getopt(argc, argv, "b:dv:tuh")) != -1)
+  while ((opt = getopt(argc, argv, "b:dv:tue:h")) != -1)
   {
     switch (opt)
     {
       case 'b':
         config.bind_addrs = (char **)realloc(config.bind_addrs, ++config.bind_addrs_cnt);
         config.bind_addrs[config.bind_addrs_cnt - 1] = strdup(optarg);
+        syslog(LOG_DEBUG, "Configured address: %s", optarg);
         break;
       case 'd':
         config.daemonize = 1;
+        syslog(LOG_DEBUG, "Configured to run in background");
         break;
       case 't':
-        if (config.sock_type != -1)
+        if (config.sock_type != -1 && config.sock_type != SOCK_STREAM)
           errx(EXIT_FAILURE, "'-t' and '-u' can't be specified simultaneously.");
 
         config.sock_type = SOCK_STREAM;
+        syslog(LOG_DEBUG, "Configured for streaming sockets");
         break;
       case 'u':
-        if (config.sock_type != -1)
+        if (config.sock_type != -1 && config.sock_type != SOCK_DGRAM)
           errx(EXIT_FAILURE, "'-t' and '-u' can't be specified simultaneously.");
 
         config.sock_type = SOCK_DGRAM;
+        syslog(LOG_DEBUG, "Configured for datagram sockets");
+        break;
+      case 'e':
+        if (!config.tbl_exp_periods)
+          config.tbl_exp_periods = (time_t *)calloc(tables_max, sizeof(time_t));
+
+        char * expiryspec = strdup(optarg);
+        char * s_tblidx = strsep(&expiryspec, ":");
+        char * s_exp = (expiryspec) ?
+          /*    table index specified */ expiryspec :
+          /* no table index specified */ s_tblidx;
+
+        time_t i_exp = (time_t)strtol(s_exp, NULL, 10);
+        int i_tblidx = -1;
+        if (s_tblidx != s_exp)
+          i_tblidx = (int)strtol(s_tblidx, NULL, 10);
+
+        if (i_tblidx != -1)
+        {
+          if (i_tblidx < 0 || i_tblidx > tables_max)
+          {
+            warnx("Value of table index must lie within [0;%i).", tables_max);
+            continue;
+          }
+
+          config.tbl_exp_periods[i_tblidx] = i_exp;
+          syslog(LOG_DEBUG, "Configured expiry interval for table (%i) is %i seconds",
+              i_tblidx, i_exp);
+        } else
+        {
+          int i;
+          for (i = 0; i < tables_max; ++i)
+            config.tbl_exp_periods[i] = i_exp;
+          syslog(LOG_INFO, "Configured expiry interval for all tables is %i seconds",
+              i_exp);
+        }
         break;
       case 'h':
         usage(ident);
@@ -272,6 +332,21 @@ int main (int argc, char * argv[])
   if (config.daemonize && daemon(0, 0) < 0)
     err(EXIT_FAILURE, "Failed to fork into background");
 
+  /* initializing structures for autoexpire */
+  STAILQ_HEAD(qhead, __autoexpq_entry) autoexpq_head =
+    STAILQ_HEAD_INITIALIZER(autoexpq_head);
+  struct __autoexpq_entry
+  {
+    uint8_t table;
+    uint8_t mask;
+    time_t timestamp;
+    uint32_t addr;
+    STAILQ_ENTRY(__autoexpq_entry) qconnector;
+  };
+  typedef struct __autoexpq_entry autoexpq_entry;
+  if (config.tbl_exp_periods) /* if any were configured */
+    STAILQ_INIT(&autoexpq_head);
+
   /* serving */
   fd_set monitor, /* currently monitored sockset */
          rds,     /* readset for select */
@@ -286,37 +361,63 @@ int main (int argc, char * argv[])
   }
 
   /* 
-   * initializing monitored set of sockets which is initially
+   * initializing monitored set of sockets which initially
    * contains only bound server sockets
    */
   memcpy(&monitor, &srvs, sizeof(fd_set));
 
+  /* for select wakeups for tables cleaning */
+  struct timeval tv;
+  struct timeval * cleanup_interval = NULL;
+  time_t cleanup_delay = 0;
+
   for ( ; ; )
   {
     memcpy(&rds, &monitor, sizeof(fd_set));
+
+    syslog(LOG_DEBUG, "MAXFD = %i", maxfd);
+
     int readysocks = 0;
-    if ((readysocks = select(maxfd + 1, &rds, NULL, NULL, NULL)) < 0)
+    if ((readysocks = select(maxfd + 1, &rds, NULL, NULL, cleanup_interval)) < 0)
     {
       syslog(LOG_ERR, "select: %s", strerror(errno));
       break;
     }
 
-    maxfd = -1;
-    for (i = 0; i < socks_cnt; ++i)
+    time_t ct = time(NULL);
+
+    if (!readysocks || cleanup_delay > MAX_CLEANUP_DELAY)
+    { /* time limit expired */
+      syslog(LOG_DEBUG, "Performing tables cleanup");
+      autoexpq_entry * entry = STAILQ_FIRST(&autoexpq_head);
+      while (entry && 
+          entry->timestamp + config.tbl_exp_periods[entry->table] <= ct)
+      { /* while there are entries and entry already expired */
+        STAILQ_REMOVE_HEAD(&autoexpq_head, qconnector);
+        ipfw_tbl_del(entry->table, entry->addr, entry->mask);
+        free(entry);
+        entry = STAILQ_FIRST(&autoexpq_head);
+      }
+      syslog(LOG_DEBUG, "Tables cleanup finished (queue is %s)",
+          STAILQ_EMPTY(&autoexpq_head) ? "empty" : "not empty");
+    }
+
+    for (i = 0; i < socks_cnt && readysocks; ++i)
     {
       int sock = socks[i];
       int sockidx = i;
       if (sock < 0)
         continue;
-      
-      if (sock > maxfd)
-        maxfd = sock;
+      syslog(LOG_DEBUG, "Processing socket %i", sock);
+
       if (FD_ISSET(sock, &rds))
       {
+        --readysocks;
         if (config.sock_type == SOCK_STREAM)
         { /* operation on connected socket */
           if (FD_ISSET(sock, &srvs))
           { /* readiness for reading of server socket means new connection */
+            syslog(LOG_DEBUG, "Event on server socket");
             if ((sock = accept(sock, NULL, 0)) < 0)
             {
               syslog(LOG_NOTICE, "Failed to accept connection: %s", strerror(errno));
@@ -368,6 +469,21 @@ int main (int argc, char * argv[])
           {
             case CMD_ADD:
               ipfw_tbl_add(msg.table, msg.addr, msg.mask);
+              if (config.tbl_exp_periods)
+              {
+                autoexpq_entry * entry =
+                  (autoexpq_entry *)calloc(1, sizeof(autoexpq_entry));
+
+                entry->table = msg.table;
+                entry->addr = msg.addr;
+                entry->mask = msg.mask;
+                entry->timestamp = time(NULL);
+
+                STAILQ_INSERT_TAIL(&autoexpq_head, entry, qconnector);
+                struct in_addr ia = { entry->addr };
+                syslog(LOG_DEBUG, "Inserted expire entry %s/%i at %i",
+                    inet_ntoa(ia), entry->mask, entry->timestamp);
+              }
               break;
             case CMD_DEL:
               ipfw_tbl_del(msg.table, msg.addr, msg.mask);
@@ -387,11 +503,36 @@ int main (int argc, char * argv[])
           FD_CLR(sock, &monitor);
           socks[sockidx] = -1;
           if (i == socks_cnt - 1)
-            socks_cnt--;
+            --socks_cnt;
+          if (sock == maxfd)
+            --maxfd;
+          syslog(LOG_DEBUG, "Cleaned up socket %i", sock);
         }
+      } /* if (FD_ISSET(sock, &rds)) */
+    } /* for (i = 0; i < socks_cnt && readysocks; ++i) */
+
+    if (config.tbl_exp_periods)
+    { /* calculate next cleanup_interval value */
+      autoexpq_entry * ent = STAILQ_FIRST(&autoexpq_head);
+
+      if (ent)
+      {
+        time_t closest_exp = ent->timestamp + config.tbl_exp_periods[ent->table] - ct;
+        tv.tv_sec = closest_exp > MIN_CLEANUP_INTERVAL ?
+          closest_exp : MIN_CLEANUP_INTERVAL;
+        cleanup_interval = &tv;
+        cleanup_delay = (closest_exp < 0) ? - closest_exp : 0;
+        syslog(LOG_DEBUG, "Next table cleanup in %i seconds "
+                          "(current delay %i seconds)",
+            tv.tv_sec, cleanup_delay);
+      } else
+      {
+        cleanup_interval = NULL;
+        syslog(LOG_DEBUG, "Expiration queue is empty!");
       }
-    }
-  }
+    } /* if (config.tbl_exp_periods) */
+
+  } /* for ( ; ; ) */
 
   syslog(LOG_INFO, "Exiting.");
 
