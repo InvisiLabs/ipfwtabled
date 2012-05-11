@@ -43,6 +43,8 @@ SOURCE
 
 TODO
 
+  * Add statistics dumping on operations performed and queue state
+  * Add persistence for expiration cache to survive service restarts
   * Add hash field for authentication/integrity check purposes
 
 BUGS
